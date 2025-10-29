@@ -1,4 +1,4 @@
-import { fairlyAllocateCredit } from "./backend";
+import { fairlyAllocateCredit, preciseSum } from "./backend";
 
 import { strict as assert } from "node:assert";
 import test from "node:test";
@@ -51,8 +51,7 @@ function getAllIntervals(
 function runFairlyAllocateCreditTest(
   tc: Readonly<FairlyAllocateCreditTestCase>,
 ): void {
-  // TODO: replace with precise sum
-  const sumCredit = tc.credit.reduce((a, b) => a + b, 0);
+  const sumCredit = preciseSum(tc.credit);
   const normalizedFloatCredit = tc.credit.map((item) => item / sumCredit);
 
   const [rand, k] = tc.needsRand ? [Math.random, 1000] : [noRand, 1];
@@ -78,8 +77,7 @@ function runFairlyAllocateCreditTest(
     }
 
     assert.equal(
-      // TODO: replace with precise sum
-      actualCredit.reduce((a, b) => a + b, 0),
+      preciseSum(actualCredit),
       tc.value,
       `actual credit does not sum to value: ${actualCredit.join(", ")}`,
     );

@@ -96,7 +96,7 @@ export class Backend {
   readonly #delegate: Delegate;
   #impressions: Readonly<Impression>[] = [];
   readonly #epochStartStore: Map<string, Temporal.Instant> = new Map();
-  #privacyBudgetStore: PrivacyBudgetStoreEntry[] = [];
+  #privacyBudgetStore: Map<string, PrivacyBudgetStoreEntry> = new Map();
 
   #lastBrowsingHistoryClear: Temporal.Instant | null = null;
 
@@ -109,7 +109,7 @@ export class Backend {
   }
 
   get privacyBudgetEntries(): ReadonlyArray<Readonly<PrivacyBudgetStoreEntry>> {
-    return this.#privacyBudgetStore;
+    return Array.from(this.#privacyBudgetStore.values());
   }
 
   get impressions(): ReadonlyArray<Readonly<Impression>> {
@@ -332,6 +332,10 @@ export class Backend {
     }: ValidatedConversionOptions,
   ): Set<Impression> {
     const matching = new Set<Impression>();
+    const conversionCaller = intermediarySite ?? topLevelSite;
+    const hasConversionCallerFilter = impressionCallers.size > 0;
+    const hasMatchValueFilter = matchValues.size > 0;
+    const hasImpressionSiteFilter = impressionSites.size > 0;
 
     for (const impression of this.#impressions) {
       const impressionEpoch = this.#getCurrentEpoch(
@@ -360,29 +364,27 @@ export class Backend {
       ) {
         continue;
       }
-      const conversionCaller = intermediarySite ?? topLevelSite;
       if (
         impression.conversionCallers.size > 0 &&
         !impression.conversionCallers.has(conversionCaller)
       ) {
         continue;
       }
-      if (matchValues.size > 0 && !matchValues.has(impression.matchValue)) {
+      if (hasMatchValueFilter && !matchValues.has(impression.matchValue)) {
         continue;
       }
       if (
-        impressionSites.size > 0 &&
+        hasImpressionSiteFilter &&
         !impressionSites.has(impression.impressionSite)
       ) {
         continue;
       }
-      const impressionCaller =
-        impression.intermediarySite ?? impression.impressionSite;
-      if (
-        impressionCallers.size > 0 &&
-        !impressionCallers.has(impressionCaller)
-      ) {
-        continue;
+      if (hasConversionCallerFilter) {
+        const impressionCaller =
+          impression.intermediarySite ?? impression.impressionSite;
+        if (!impressionCallers.has(impressionCaller)) {
+          continue;
+        }
       }
       matching.add(impression);
     }
@@ -453,7 +455,7 @@ export class Backend {
     );
 
     if (singleEpoch) {
-      const l1Norm = histogram.reduce((a, b) => a + b);
+      const l1Norm = preciseSum(histogram);
       if (l1Norm > options.value) {
         throw new DOMException(
           "l1Norm must be less than or equal to options.value",
@@ -489,15 +491,14 @@ export class Backend {
     maxValue: number,
     l1Norm: number | null,
   ): boolean {
-    let entry = this.#privacyBudgetStore.find(
-      (e) => e.epoch === key.epoch && e.site === key.site,
-    );
+    const mapKey = `${key.site}:${key.epoch}`;
+    let entry = this.#privacyBudgetStore.get(mapKey);
     if (entry === undefined) {
       entry = {
         value: this.#delegate.privacyBudgetMicroEpsilons + 1000,
         ...key,
       };
-      this.#privacyBudgetStore.push(entry);
+      this.#privacyBudgetStore.set(mapKey, entry);
     }
     const sensitivity = l1Norm ?? 2 * value;
     const noiseScale = (2 * maxValue) / epsilon;
@@ -632,11 +633,10 @@ export class Backend {
       const startEpoch = this.#getStartEpoch(site, now);
       const currentEpoch = this.#getCurrentEpoch(site, now);
       for (let epoch = startEpoch; epoch <= currentEpoch; ++epoch) {
-        const entry = this.#privacyBudgetStore.find(
-          (e) => e.epoch === epoch && e.site === site,
-        );
+        const mapKey = `${site}:${epoch}`;
+        const entry = this.#privacyBudgetStore.get(mapKey);
         if (entry === undefined) {
-          this.#privacyBudgetStore.push({
+          this.#privacyBudgetStore.set(mapKey, {
             site,
             epoch,
             value: 0,
@@ -657,15 +657,18 @@ export class Backend {
 
     if (parsedSites.size === 0) {
       this.#impressions = [];
-      this.#privacyBudgetStore = [];
+      this.#privacyBudgetStore = new Map();
       this.#epochStartStore.clear();
     } else {
       this.#impressions = this.#impressions.filter((e) => {
         return !parsedSites.has(e.impressionSite);
       });
-      this.#privacyBudgetStore = this.#privacyBudgetStore.filter((e) => {
-        return !parsedSites.has(e.site);
-      });
+      // Filter Map entries by deleting matching sites
+      for (const [key, entry] of this.#privacyBudgetStore.entries()) {
+        if (parsedSites.has(entry.site)) {
+          this.#privacyBudgetStore.delete(key);
+        }
+      }
       for (const site of parsedSites) {
         this.#epochStartStore.delete(site);
       }
@@ -695,13 +698,27 @@ function checkRandom(p: number): number {
   return p;
 }
 
+export function preciseSum(values: readonly number[]): number {
+  // Kahan summation algorithm for better numerical accuracy
+  let sum = 0;
+  let compensation = 0;
+  
+  for (const value of values) {
+    const y = value - compensation;
+    const t = sum + y;
+    compensation = (t - sum) - y;
+    sum = t;
+  }
+  
+  return sum;
+}
+
 export function fairlyAllocateCredit(
   credit: readonly number[],
   value: number,
   rand: () => number,
 ): number[] {
-  // TODO: replace with precise sum
-  const sumCredit = credit.reduce((a, b) => a + b, 0);
+  const sumCredit = preciseSum(credit);
 
   const roundedCredit = credit.map((item) => (value * item) / sumCredit);
 
