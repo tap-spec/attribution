@@ -332,6 +332,10 @@ export class Backend {
     }: ValidatedConversionOptions,
   ): Set<Impression> {
     const matching = new Set<Impression>();
+    const conversionCaller = intermediarySite ?? topLevelSite;
+    const hasConversionCallerFilter = impressionCallers.size > 0;
+    const hasMatchValueFilter = matchValues.size > 0;
+    const hasImpressionSiteFilter = impressionSites.size > 0;
 
     for (const impression of this.#impressions) {
       const impressionEpoch = this.#getCurrentEpoch(
@@ -360,29 +364,27 @@ export class Backend {
       ) {
         continue;
       }
-      const conversionCaller = intermediarySite ?? topLevelSite;
       if (
         impression.conversionCallers.size > 0 &&
         !impression.conversionCallers.has(conversionCaller)
       ) {
         continue;
       }
-      if (matchValues.size > 0 && !matchValues.has(impression.matchValue)) {
+      if (hasMatchValueFilter && !matchValues.has(impression.matchValue)) {
         continue;
       }
       if (
-        impressionSites.size > 0 &&
+        hasImpressionSiteFilter &&
         !impressionSites.has(impression.impressionSite)
       ) {
         continue;
       }
-      const impressionCaller =
-        impression.intermediarySite ?? impression.impressionSite;
-      if (
-        impressionCallers.size > 0 &&
-        !impressionCallers.has(impressionCaller)
-      ) {
-        continue;
+      if (hasConversionCallerFilter) {
+        const impressionCaller =
+          impression.intermediarySite ?? impression.impressionSite;
+        if (!impressionCallers.has(impressionCaller)) {
+          continue;
+        }
       }
       matching.add(impression);
     }
