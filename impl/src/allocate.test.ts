@@ -48,11 +48,25 @@ function getAllIntervals(
   return creditFractions.map((cf) => getIntervalApprox(n, cf, alpha));
 }
 
+function preciseSum(values: readonly number[]): number {
+  // Kahan summation algorithm for better numerical accuracy
+  let sum = 0;
+  let compensation = 0;
+  
+  for (const value of values) {
+    const y = value - compensation;
+    const t = sum + y;
+    compensation = (t - sum) - y;
+    sum = t;
+  }
+  
+  return sum;
+}
+
 function runFairlyAllocateCreditTest(
   tc: Readonly<FairlyAllocateCreditTestCase>,
 ): void {
-  // TODO: replace with precise sum
-  const sumCredit = tc.credit.reduce((a, b) => a + b, 0);
+  const sumCredit = preciseSum(tc.credit);
   const normalizedFloatCredit = tc.credit.map((item) => item / sumCredit);
 
   const [rand, k] = tc.needsRand ? [Math.random, 1000] : [noRand, 1];
@@ -78,8 +92,7 @@ function runFairlyAllocateCreditTest(
     }
 
     assert.equal(
-      // TODO: replace with precise sum
-      actualCredit.reduce((a, b) => a + b, 0),
+      preciseSum(actualCredit),
       tc.value,
       `actual credit does not sum to value: ${actualCredit.join(", ")}`,
     );
