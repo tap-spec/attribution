@@ -698,7 +698,7 @@ function checkRandom(p: number): number {
   return p;
 }
 
-function preciseSum(values: readonly number[]): number {
+export function preciseSum(values: readonly number[]): number {
   // Kahan summation algorithm for better numerical accuracy
   let sum = 0;
   let compensation = 0;

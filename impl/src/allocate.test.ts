@@ -1,4 +1,4 @@
-import { fairlyAllocateCredit } from "./backend";
+import { fairlyAllocateCredit, preciseSum } from "./backend";
 
 import { strict as assert } from "node:assert";
 import test from "node:test";
@@ -46,21 +46,6 @@ function getAllIntervals(
   // the number of dimensions: https://en.wikipedia.org/wiki/Bonferroni_correction
   const alpha = alphaTotal / creditFractions.length;
   return creditFractions.map((cf) => getIntervalApprox(n, cf, alpha));
-}
-
-function preciseSum(values: readonly number[]): number {
-  // Kahan summation algorithm for better numerical accuracy
-  let sum = 0;
-  let compensation = 0;
-  
-  for (const value of values) {
-    const y = value - compensation;
-    const t = sum + y;
-    compensation = (t - sum) - y;
-    sum = t;
-  }
-  
-  return sum;
 }
 
 function runFairlyAllocateCreditTest(
